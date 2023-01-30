@@ -1,0 +1,191 @@
+---
+title: "E1"
+author: "Siyuan Liu"
+date: "2023-01-27"
+output: pdf_document
+---
+
+```{r load-packages, include=FALSE}
+library(dplyr)
+library(magrittr)
+library(knitr)
+library(ggplot2)
+library(parallel)
+library(foreach)
+library(tidymodels)
+library(caret)
+```
+
+##problem1
+
+I try to figure out what is the best of day to fly to minimize delays, and does this change by airline. As it shows in plot 1, 4am-5am is the best time of day to fly to minimize delays, and for different airline, the beat time of day looks different. For example the best time for B6 to minimize delays is about 12am-1am, but for XE the best time is about 5am-6am.
+
+```{r echo=FALSE}
+ABIA = read.csv(file = "ABIA.csv" , header = T)
+ABIA_S = ABIA%>%
+  group_by(DepTime, UniqueCarrier)%>%
+  summarise(avg_DepDelay = mean(DepDelay))
+p = ggplot(ABIA_S) +
+   geom_histogram(aes(x = DepTime),
+             binwidth=40)+
+  labs(x = "DepTime", y = "avg_DepDelay", title = "Average departure delay time of the day ")
+p + scale_x_continuous(breaks = seq(0, 2400, 100))     
+ABIA_S%>%
+  arrange(avg_DepDelay) %>%
+  head(10)
+F = ggplot(ABIA_S) +
+  geom_line(aes(x = DepTime, y = avg_DepDelay,
+                              group = UniqueCarrier,
+                              color = UniqueCarrier))+
+labs(title = "Average departure delay time of the day for different airline")
+F + scale_x_continuous(breaks = seq(0, 2400, 100))
+SABIA_S=ABIA_S%>%
+  filter(UniqueCarrier == "B6" | UniqueCarrier =="XE")
+E = ggplot(SABIA_S) +
+  geom_point(aes(x = DepTime, y = avg_DepDelay,
+                              group = UniqueCarrier,
+                              color = UniqueCarrier))+
+labs(title = "Average departure delay time of the day for B6 and XE")
+E + scale_x_continuous(breaks = seq(0, 2400, 100))
+```
+
+
+##problem 2
+##A
+```{r echo=FALSE}
+olympics_top20 = read.csv(file = "olympics_top20.csv" , header = T)
+olyath = olympics_top20%>%
+  filter(sport == "Athletics", sex == "F")
+olyath%>%
+  summarise(q95_temp = quantile(height, 0.95))
+```
+The 95th percentile of heights for female competitors across all Athletics events is 183.
+
+##B
+```{r echo=FALSE}
+olyhei = olympics_top20%>%
+  filter( sex == "F")%>%
+  group_by(event)%>%
+  summarise(sd_height = sd(height))
+olyhei%>%
+  arrange(desc(sd_height))
+```
+Swimming Women's 100 meters Butterfly had the greatest variability in competitor's heights across the entire history of the Olympics.
+
+##C
+```{r echo=FALSE}
+olysw = olympics_top20%>%
+  filter( sport == "Swimming")%>%
+  group_by(year,sex)%>%
+  summarise(age_avg = mean(age))
+ggplot() +
+  geom_line(data = olysw, aes(x = year, y = age_avg,
+                              group = sex,
+                              color = sex))
+```
+The trend look different for male swimmers For male swimmers, the average age of Olympic swimmers increase from 1900 to 1925 and the average age of Olympic swimmers decrease until about 1975 for both male and female.
+
+
+
+##problem 3  
+
+##350
+```{r echo=FALSE}
+sclass = read.csv(file = "sclass.csv" , header = T)
+sclass_350 = sclass%>%
+  select(trim, mileage, price)%>%
+  filter( trim == "350")
+
+k_grid = c(2, 4, 6, 8, 10, 15, 20, 25, 30, 35, 40, 45,
+           50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 250, 300)
+rmse_out = foreach(i=1:20, .combine='rbind') %dopar% {
+sclass_350split = initial_split(sclass_350, prop = 0.8)
+sclass_350train = training(sclass_350split)
+sclass_350test = testing(sclass_350split)
+  this_rmse = foreach(k = k_grid, .combine='c') %do% {
+    knn_model = knnreg(price ~ mileage, data=sclass_350train, k = k, use.all=TRUE)
+    modelr::rmse(knn_model, sclass_350test)
+  }
+  data.frame(k=k_grid, rmse=this_rmse)
+}
+rmse_out = arrange(rmse_out, k)
+armse_out = rmse_out%>%
+  group_by(k)%>%
+  summarise(armse = mean(rmse))
+armse_out
+ggplot(rmse_out) + geom_boxplot(aes(x=factor(k), y=rmse)) + theme_bw(base_size=7)
+```
+When K = 15 it bottoms out.
+
+For k = 15 the plot of the fitted model shows as follow:
+```{r echo=FALSE}
+sclass = read.csv(file = "sclass.csv" , header = T)
+sclass_350 = sclass%>%
+  select(trim, mileage, price)%>%
+  filter( trim == "350")
+sclass_350split = initial_split(sclass_350, prop = 0.8)
+sclass_350train = training(sclass_350split)
+sclass_350test = testing(sclass_350split)
+knn_model = knnreg(price ~ mileage, data = sclass_350train, k =15)
+modelr::rmse(knn_model, sclass_350test)
+knn_pred = function(x) {
+  predict(knn_model, newdata=data.frame(mileage=x))
+}
+p_base = ggplot(data = sclass_350) + 
+  geom_point(mapping = aes(x = mileage, y = price), color='darkgrey')
+p_base + stat_function(fun=knn_pred, color='red', size=1.5)
+
+```
+
+
+
+
+##65 AMG
+```{r echo=FALSE}
+sclass = read.csv(file = "sclass.csv" , header = T)
+sclass_65 = sclass%>%
+  select(trim, mileage, price)%>%
+  filter( trim == "65 AMG")
+
+k_grid = c(2, 4, 6, 8, 10, 15, 20, 25, 30, 35, 40, 45,
+           50, 60, 70, 80, 90, 100, 125, 150, 175, 200)
+rmse_out = foreach(i=1:20, .combine='rbind') %dopar% {
+sclass_65split = initial_split(sclass_65, prop = 0.8)
+sclass_65train = training(sclass_65split)
+sclass_65test = testing(sclass_65split)
+  this_rmse = foreach(k = k_grid, .combine='c') %do% {
+    knn_model = knnreg(price ~ mileage, data=sclass_65train, k = k, use.all=TRUE)
+    modelr::rmse(knn_model, sclass_65test)
+  }
+  data.frame(k=k_grid, rmse=this_rmse)
+}
+rmse_out = arrange(rmse_out, k)
+armse_out = rmse_out%>%
+  group_by(k)%>%
+  summarise(armse = mean(rmse))
+armse_out
+ggplot(rmse_out) + geom_boxplot(aes(x=factor(k), y=rmse)) + theme_bw(base_size=7)
+```
+When K = 15 it bottoms out.
+
+For k = 15 the plot of the fitted model shows as follow:
+```{r echo=FALSE}
+sclass = read.csv(file = "sclass.csv" , header = T)
+sclass_65 = sclass%>%
+  select(trim, mileage, price)%>%
+  filter( trim == "65 AMG")
+sclass_65split = initial_split(sclass_65, prop = 0.8)
+sclass_65train = training(sclass_65split)
+sclass_65test = testing(sclass_65split)
+knn_model = knnreg(price ~ mileage, data = sclass_65train, k =10)
+modelr::rmse(knn_model, sclass_65test)
+knn_pred = function(x) {
+  predict(knn_model, newdata=data.frame(mileage=x))
+}
+p_base = ggplot(data = sclass_65) + 
+  geom_point(mapping = aes(x = mileage, y = price), color='darkgrey')
+p_base + stat_function(fun=knn_pred, color='red', size=1.5)
+```
+I think 350's yields a larger optimal value of K. Because it has a larger sample size.
+
+
